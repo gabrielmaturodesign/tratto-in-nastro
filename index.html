@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Disegna un tratto a mano libera e ottieni un nastro di cerchi in stile Spline: immagine di riferimento, forme salvabili, gradiente a stop liberi, punto luce, export SVG, PNG e JSON.">
+<meta name="description" content="Disegna un tratto a mano libera e ottieni un nastro di cerchi in stile Spline: immagine di riferimento scalabile, forme salvabili, gradiente a stop liberi, punto luce, export SVG, PNG e JSON.">
 <meta name="theme-color" content="#EEF2F6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#070A0F" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="Tratto in Nastro">
@@ -261,18 +261,22 @@
           </div>
         </div>
         <div class="row" style="margin-top:10px">
+          <label for="bgscale">Scala <b id="bgscale-v">100%</b></label>
+          <input type="range" id="bgscale" min="15" max="150" value="100">
+        </div>
+        <div class="row" style="margin-top:8px">
           <label for="bgalpha">Opacit&agrave; <b id="bgalpha-v">100</b></label>
           <input type="range" id="bgalpha" min="5" max="100" value="100">
         </div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="bgexp"> Includi l&rsquo;immagine nell&rsquo;export</label>
       </div>
-      <p class="note" id="bgnote">La tavola prende le proporzioni dell&rsquo;immagine. Puoi anche trascinarla direttamente sulla tavola.</p>
+      <p class="note" id="bgnote">La tavola prende le proporzioni dell&rsquo;immagine, poi puoi rimpicciolirla per disegnare anche fuori dai suoi bordi. Puoi trascinare il file direttamente sulla tavola.</p>
     </section>
 
     <section class="sec">
       <h2>Tratto</h2>
       <div class="row" id="row-fmt">
-        <label id="lbl-fmt">Formato tavola <b id="fmt-note"></b></label>
+        <label id="lbl-fmt">Formato tavola</label>
         <div class="fmt" id="fmt" role="group" aria-labelledby="lbl-fmt">
           <button data-w="700" data-h="1000" aria-pressed="true">Verticale</button>
           <button data-w="900" data-h="900" aria-pressed="false">Quadrata</button>
@@ -415,7 +419,7 @@ var S = {
   count:576, round:25, lag:50, profile:"const", rmax:80, rmin:52,
   stops:[{p:0,hex:"#3EB8EB"},{p:0.5,hex:"#C70680"},{p:1,hex:"#E61F54"}], sel:0,
   bg:"#FFFFFF", transp:false,
-  guide:false, bgAlpha:100, bgExport:false,
+  guide:false, bgAlpha:100, bgScale:100, bgExport:false,
   light:{on:true, x:0.24, y:0.11, int:70, size:9, reach:70}
 };
 var strokes = [];     /* [{pts:[{x,y,p}]}] */
@@ -627,8 +631,9 @@ function render(){
   ctx.clearRect(0,0,AB.w,AB.h);
   ctx.fillStyle = S.bg; ctx.fillRect(0,0,AB.w,AB.h);
   if (bgImg){
+    var br = bgRect();
     ctx.save(); ctx.globalAlpha = S.bgAlpha/100;
-    ctx.drawImage(bgImg, 0, 0, AB.w, AB.h);
+    ctx.drawImage(bgImg, br.x, br.y, br.w, br.h);
     ctx.restore();
   }
 
@@ -767,7 +772,9 @@ function svgString(){
   var out = ['<svg xmlns="http://www.w3.org/2000/svg" width="'+AB.w+'" height="'+AB.h+'" viewBox="0 0 '+AB.w+' '+AB.h+'" fill="none">'];
   if (!S.transp) out.push('<rect width="'+AB.w+'" height="'+AB.h+'" fill="'+S.bg+'"/>');
   if (bgImg && S.bgExport){
-    out.push('<image href="' + bgImg.src + '" x="0" y="0" width="' + AB.w + '" height="' + AB.h +
+    var br = bgRect();
+    out.push('<image href="' + bgImg.src + '" x="' + br.x.toFixed(1) + '" y="' + br.y.toFixed(1) +
+             '" width="' + br.w.toFixed(1) + '" height="' + br.h.toFixed(1) +
              '" preserveAspectRatio="none" opacity="' + (S.bgAlpha/100).toFixed(2) + '"/>');
   }
   function c(x,y,r,f){ out.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+f+'"/>'); }
@@ -828,15 +835,16 @@ document.getElementById("exp-svg2").onclick = doSvg;
 document.getElementById("exp-json").onclick = function(){ deliver("nastro.json", jsonString(), "JSON — [cx, cy, r, colore]"); };
 document.getElementById("exp-code").onclick = function(){ sheet("SVG", svgString()); };
 document.getElementById("exp-png").onclick = function(){
-  var k = bgImg ? Math.max(2, Math.min(4, bgImg.naturalWidth / AB.w)) : 2;
+  var k = bgImg ? Math.max(2, Math.min(4, bgImg.naturalWidth / Math.max(1, bgRect().w))) : 2;
   var off = document.createElement("canvas");
   off.width = AB.w*k; off.height = AB.h*k;
   var o = off.getContext("2d");
   o.setTransform(k,0,0,k,0,0);
   if (!S.transp){ o.fillStyle = S.bg; o.fillRect(0,0,AB.w,AB.h); }
   if (bgImg && S.bgExport){
+    var pr = bgRect();
     o.save(); o.globalAlpha = S.bgAlpha/100;
-    o.drawImage(bgImg, 0, 0, AB.w, AB.h);
+    o.drawImage(bgImg, pr.x, pr.y, pr.w, pr.h);
     o.restore();
   }
   function d(x,y,r){ o.beginPath(); o.arc(x,y,r,0,6.28318530718); o.fill(); }
@@ -1036,6 +1044,14 @@ var bgRemove = document.getElementById("bgdrop");
 /* La tavola prende le PROPORZIONI dell'immagine, con il lato lungo normalizzato
    a 1000: cos&igrave; gli spessori e il numero di cerchi restano confrontabili con
    qualsiasi immagine, che sia da 600 o da 6000 pixel. */
+/* Dove finisce l'immagine dentro la tavola: al 100% la riempie,
+   sotto lascia margine libero su cui disegnare, sopra deborda. */
+function bgRect(){
+  if (!bgImg) return null;
+  var k = Math.min(AB.w/bgImg.naturalWidth, AB.h/bgImg.naturalHeight) * (S.bgScale/100);
+  var w = bgImg.naturalWidth*k, h = bgImg.naturalHeight*k;
+  return {x:(AB.w-w)/2, y:(AB.h-h)/2, w:w, h:h};
+}
 function fitArtboardTo(img){
   var k = 1000 / Math.max(img.naturalWidth, img.naturalHeight);
   setArtboard(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
@@ -1050,8 +1066,6 @@ function setBg(img, name){
   bgInfo.hidden = false;
   bgNote.hidden = true;
   bgRemove.disabled = false;
-  document.getElementById("row-fmt").classList.add("off");
-  document.getElementById("fmt-note").textContent = "— dall’immagine";
   render();
 }
 function clearBg(){
@@ -1060,8 +1074,6 @@ function clearBg(){
   bgInfo.hidden = true;
   bgNote.hidden = false;
   bgRemove.disabled = true;
-  document.getElementById("row-fmt").classList.remove("off");
-  document.getElementById("fmt-note").textContent = "";
   if (prevAB){ setArtboard(prevAB.w, prevAB.h); prevAB = null; }
   render();
 }
@@ -1080,6 +1092,11 @@ function readImage(file){
 document.getElementById("bgpick").addEventListener("click", function(){ bgFile.click(); });
 bgFile.addEventListener("change", function(){ if (this.files && this.files[0]) readImage(this.files[0]); this.value = ""; });
 bgRemove.addEventListener("click", clearBg);
+document.getElementById("bgscale").addEventListener("input", function(){
+  S.bgScale = +this.value;
+  document.getElementById("bgscale-v").textContent = this.value + "%";
+  render();
+});
 document.getElementById("bgalpha").addEventListener("input", function(){
   S.bgAlpha = +this.value;
   document.getElementById("bgalpha-v").textContent = this.value;
