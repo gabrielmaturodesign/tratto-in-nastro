@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Disegna un tratto a mano libera e ottieni un nastro di cerchi in stile Spline: forme salvabili, gradiente a stop liberi, punto luce, export SVG, PNG e JSON.">
+<meta name="description" content="Disegna un tratto a mano libera e ottieni un nastro di cerchi in stile Spline: immagine di riferimento, forme salvabili, gradiente a stop liberi, punto luce, export SVG, PNG e JSON.">
 <meta name="theme-color" content="#EEF2F6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#070A0F" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="Tratto in Nastro">
@@ -129,6 +129,15 @@
   .hnd[data-sel="1"]{box-shadow:0 0 0 2px var(--accent);z-index:3}
   .stoprow{display:grid;grid-template-columns:56px 1fr auto;gap:8px;align-items:center}
   .stoprow .mono{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
+  .bgrow{display:flex;gap:10px;align-items:center}
+  .bgrow img{width:54px;height:54px;object-fit:cover;border-radius:7px;border:1px solid var(--line);background:var(--sunk)}
+  .bgname{font-size:12px;color:var(--ink);word-break:break-all;line-height:1.3}
+  .bgdim{font-size:11px;color:var(--muted)}
+  .row.off,.dis{opacity:.4;pointer-events:none}
+  #fmt-note{font-family:"IBM Plex Sans",sans-serif;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
+  .stagewrap.over::after{
+    content:"";position:absolute;inset:12px;border:2px dashed var(--accent);border-radius:14px;pointer-events:none;
+  }
   .shapes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   .shape{
     appearance:none;border:1px solid var(--line);background:var(--bg);border-radius:9px;
@@ -237,9 +246,33 @@
     </section>
 
     <section class="sec">
+      <h2>Immagine di sfondo</h2>
+      <input type="file" id="bgfile" accept="image/*" hidden>
+      <div class="out">
+        <button class="btn" id="bgpick">Carica immagine</button>
+        <button class="btn ghost" id="bgdrop" disabled>Rimuovi</button>
+      </div>
+      <div id="bginfo" hidden>
+        <div class="bgrow">
+          <img id="bgthumb" alt="">
+          <div>
+            <div class="bgname mono" id="bgname"></div>
+            <div class="bgdim mono" id="bgdim"></div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label for="bgalpha">Opacit&agrave; <b id="bgalpha-v">100</b></label>
+          <input type="range" id="bgalpha" min="5" max="100" value="100">
+        </div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="bgexp"> Includi l&rsquo;immagine nell&rsquo;export</label>
+      </div>
+      <p class="note" id="bgnote">La tavola prende le proporzioni dell&rsquo;immagine. Puoi anche trascinarla direttamente sulla tavola.</p>
+    </section>
+
+    <section class="sec">
       <h2>Tratto</h2>
-      <div class="row">
-        <label id="lbl-fmt">Formato tavola</label>
+      <div class="row" id="row-fmt">
+        <label id="lbl-fmt">Formato tavola <b id="fmt-note"></b></label>
         <div class="fmt" id="fmt" role="group" aria-labelledby="lbl-fmt">
           <button data-w="700" data-h="1000" aria-pressed="true">Verticale</button>
           <button data-w="900" data-h="900" aria-pressed="false">Quadrata</button>
@@ -382,7 +415,7 @@ var S = {
   count:576, round:25, lag:50, profile:"const", rmax:80, rmin:52,
   stops:[{p:0,hex:"#3EB8EB"},{p:0.5,hex:"#C70680"},{p:1,hex:"#E61F54"}], sel:0,
   bg:"#FFFFFF", transp:false,
-  guide:false,
+  guide:false, bgAlpha:100, bgExport:false,
   light:{on:true, x:0.24, y:0.11, int:70, size:9, reach:70}
 };
 var strokes = [];     /* [{pts:[{x,y,p}]}] */
@@ -593,6 +626,11 @@ function render(){
   ctx.setTransform(sc,0,0,sc,0,0);
   ctx.clearRect(0,0,AB.w,AB.h);
   ctx.fillStyle = S.bg; ctx.fillRect(0,0,AB.w,AB.h);
+  if (bgImg){
+    ctx.save(); ctx.globalAlpha = S.bgAlpha/100;
+    ctx.drawImage(bgImg, 0, 0, AB.w, AB.h);
+    ctx.restore();
+  }
 
   emit(function(c){ ctx.fillStyle = c.hex; disc(c.x, c.y, c.r); });
 
@@ -728,6 +766,10 @@ cv.addEventListener("pointercancel", release);
 function svgString(){
   var out = ['<svg xmlns="http://www.w3.org/2000/svg" width="'+AB.w+'" height="'+AB.h+'" viewBox="0 0 '+AB.w+' '+AB.h+'" fill="none">'];
   if (!S.transp) out.push('<rect width="'+AB.w+'" height="'+AB.h+'" fill="'+S.bg+'"/>');
+  if (bgImg && S.bgExport){
+    out.push('<image href="' + bgImg.src + '" x="0" y="0" width="' + AB.w + '" height="' + AB.h +
+             '" preserveAspectRatio="none" opacity="' + (S.bgAlpha/100).toFixed(2) + '"/>');
+  }
   function c(x,y,r,f){ out.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+f+'"/>'); }
   emit(function(o){ c(o.x, o.y, o.r, o.hex); });
   out.push('</svg>');
@@ -786,11 +828,17 @@ document.getElementById("exp-svg2").onclick = doSvg;
 document.getElementById("exp-json").onclick = function(){ deliver("nastro.json", jsonString(), "JSON — [cx, cy, r, colore]"); };
 document.getElementById("exp-code").onclick = function(){ sheet("SVG", svgString()); };
 document.getElementById("exp-png").onclick = function(){
-  var k = 2, off = document.createElement("canvas");
+  var k = bgImg ? Math.max(2, Math.min(4, bgImg.naturalWidth / AB.w)) : 2;
+  var off = document.createElement("canvas");
   off.width = AB.w*k; off.height = AB.h*k;
   var o = off.getContext("2d");
   o.setTransform(k,0,0,k,0,0);
   if (!S.transp){ o.fillStyle = S.bg; o.fillRect(0,0,AB.w,AB.h); }
+  if (bgImg && S.bgExport){
+    o.save(); o.globalAlpha = S.bgAlpha/100;
+    o.drawImage(bgImg, 0, 0, AB.w, AB.h);
+    o.restore();
+  }
   function d(x,y,r){ o.beginPath(); o.arc(x,y,r,0,6.28318530718); o.fill(); }
   emit(function(c){ o.fillStyle = c.hex; d(c.x, c.y, c.r); });
   off.toBlob(function(blob){ deliver("nastro.png", blob, "PNG"); }, "image/png");
@@ -937,14 +985,16 @@ document.getElementById("toggle-guide").addEventListener("click", function(){
   this.textContent = S.guide ? "Nascondi tracciato" : "Mostra tracciato";
   render();
 });
-document.getElementById("fmt").addEventListener("click", function(e){
-  var b = e.target.closest("button"); if (!b) return;
-  Array.prototype.forEach.call(this.querySelectorAll("button"), function(x){ x.setAttribute("aria-pressed", String(x === b)); });
-  var w = +b.getAttribute("data-w"), h = +b.getAttribute("data-h");
+function setArtboard(w, h){
   var fx = w/AB.w, fy = h/AB.h;
   AB.w = w; AB.h = h;
   strokes.forEach(function(sk){ sk.pts.forEach(function(q){ q.x *= fx; q.y *= fy; }); });
   build(); layout();
+}
+document.getElementById("fmt").addEventListener("click", function(e){
+  var b = e.target.closest("button"); if (!b) return;
+  Array.prototype.forEach.call(this.querySelectorAll("button"), function(x){ x.setAttribute("aria-pressed", String(x === b)); });
+  setArtboard(+b.getAttribute("data-w"), +b.getAttribute("data-h"));
 });
 document.getElementById("undo").onclick = function(){ strokes.pop(); schedule(); };
 document.getElementById("clear").onclick = function(){ strokes = []; schedule(); };
@@ -975,6 +1025,79 @@ PRESETS.forEach(function(pr){
     drawStops(); schedule();
   };
   pw.appendChild(b);
+});
+
+/* ============ immagine di sfondo ============ */
+var bgImg = null, prevAB = null;
+var bgFile = document.getElementById("bgfile");
+var bgInfo = document.getElementById("bginfo"), bgNote = document.getElementById("bgnote");
+var bgRemove = document.getElementById("bgdrop");
+
+/* La tavola prende le PROPORZIONI dell'immagine, con il lato lungo normalizzato
+   a 1000: cos&igrave; gli spessori e il numero di cerchi restano confrontabili con
+   qualsiasi immagine, che sia da 600 o da 6000 pixel. */
+function fitArtboardTo(img){
+  var k = 1000 / Math.max(img.naturalWidth, img.naturalHeight);
+  setArtboard(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
+}
+function setBg(img, name){
+  if (!bgImg) prevAB = {w:AB.w, h:AB.h};
+  bgImg = img;
+  fitArtboardTo(img);
+  document.getElementById("bgthumb").src = img.src;
+  document.getElementById("bgname").textContent = name;
+  document.getElementById("bgdim").textContent = img.naturalWidth + " × " + img.naturalHeight + " px";
+  bgInfo.hidden = false;
+  bgNote.hidden = true;
+  bgRemove.disabled = false;
+  document.getElementById("row-fmt").classList.add("off");
+  document.getElementById("fmt-note").textContent = "— dall’immagine";
+  render();
+}
+function clearBg(){
+  if (!bgImg) return;
+  bgImg = null;
+  bgInfo.hidden = true;
+  bgNote.hidden = false;
+  bgRemove.disabled = true;
+  document.getElementById("row-fmt").classList.remove("off");
+  document.getElementById("fmt-note").textContent = "";
+  if (prevAB){ setArtboard(prevAB.w, prevAB.h); prevAB = null; }
+  render();
+}
+function readImage(file){
+  if (!file || !/^image\//.test(file.type)){ bgNote.textContent = "Serve un file immagine (PNG, JPG, WebP…)."; bgNote.hidden = false; return; }
+  if (file.size > 25 * 1024 * 1024){ bgNote.textContent = "Immagine troppo pesante: resta sotto i 25 MB."; bgNote.hidden = false; return; }
+  var r = new FileReader();
+  r.onload = function(){
+    var img = new Image();
+    img.onload = function(){ setBg(img, file.name); };
+    img.onerror = function(){ bgNote.textContent = "Non riesco ad aprire questa immagine."; bgNote.hidden = false; };
+    img.src = r.result;
+  };
+  r.readAsDataURL(file);
+}
+document.getElementById("bgpick").addEventListener("click", function(){ bgFile.click(); });
+bgFile.addEventListener("change", function(){ if (this.files && this.files[0]) readImage(this.files[0]); this.value = ""; });
+bgRemove.addEventListener("click", clearBg);
+document.getElementById("bgalpha").addEventListener("input", function(){
+  S.bgAlpha = +this.value;
+  document.getElementById("bgalpha-v").textContent = this.value;
+  render();
+});
+document.getElementById("bgexp").addEventListener("change", function(){ S.bgExport = this.checked; });
+
+/* trascinamento sulla tavola */
+var stageWrap = cv.parentElement;
+["dragenter","dragover"].forEach(function(ev){
+  stageWrap.addEventListener(ev, function(e){ e.preventDefault(); stageWrap.classList.add("over"); });
+});
+["dragleave","dragend"].forEach(function(ev){
+  stageWrap.addEventListener(ev, function(){ stageWrap.classList.remove("over"); });
+});
+stageWrap.addEventListener("drop", function(e){
+  e.preventDefault(); stageWrap.classList.remove("over");
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) readImage(e.dataTransfer.files[0]);
 });
 
 /* ============ forme salvate dall'utente ============ */
