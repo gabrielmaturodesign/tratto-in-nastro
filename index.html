@@ -299,6 +299,7 @@
         <label for="profile">Profilo dello spessore</label>
         <select id="profile">
           <option value="const" selected>Costante</option>
+          <option value="grow">Stretto all&rsquo;inizio</option>
           <option value="persp">Prospettiva &mdash; sottile al centro</option>
           <option value="taper">Affusolato &mdash; sottile agli estremi</option>
           <option value="hand">Mano &mdash; pressione o velocit&agrave;</option>
@@ -575,6 +576,7 @@ function build(){
     for (var k=0;k<pts.length;k++){
       var u = k/(pts.length-1), m;
       if (S.profile === "const") m = 1;
+      else if (S.profile === "grow") m = Math.pow(u, 0.7);
       else if (S.profile === "taper") m = Math.pow(Math.sin(Math.PI*u), 0.55);
       else if (S.profile === "persp") m = 1 - Math.pow(Math.sin(Math.PI*u), 0.9);
       else m = Math.max(0, Math.min(1, pts[k].p));
