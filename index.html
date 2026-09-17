@@ -219,7 +219,7 @@
     <div class="tools">
       <button class="btn" id="toggle-guide" aria-pressed="false">Mostra tracciato</button>
     </div>
-    <div class="hint" id="hint">tieni premuto e trascina sulla tavola per disegnare</div>
+    <div class="hint" id="hint">trascina per disegnare &mdash; o tieni premuta la barra spaziatrice e muovi il cursore</div>
   </div>
 
   <aside class="panel">
@@ -716,7 +716,21 @@ function penLoop(){
 }
 function startPen(){ penLast = performance.now(); if (!penRaf) penRaf = requestAnimationFrame(penLoop); }
 
-var dragLight = false;
+var dragLight = false, overCanvas = false, lastPos = null, spaceDrawing = false;
+
+function beginStroke(q){
+  aim = {x:q.x, y:q.y, p:q.p, t:performance.now()};
+  prevAim = aim;
+  pen = {x:q.x, y:q.y, p:q.p};
+  drawing = {pts:[{x:q.x, y:q.y, p:q.p}]};
+  releasing = 0;
+  hint.style.opacity = "0";
+  startPen();
+}
+
+cv.addEventListener("pointerenter", function(){ overCanvas = true; });
+cv.addEventListener("pointerleave", function(){ overCanvas = false; });
+
 cv.addEventListener("pointerdown", function(e){
   cv.setPointerCapture(e.pointerId);
   if (S.light.on){
@@ -725,14 +739,10 @@ cv.addEventListener("pointerdown", function(e){
       dragLight = true; return;
     }
   }
-  aim = pos(e); aim.t = performance.now(); prevAim = aim;
-  pen = {x:aim.x, y:aim.y, p:aim.p};
-  drawing = {pts:[{x:pen.x, y:pen.y, p:pen.p}]};
-  releasing = 0;
-  hint.style.opacity = "0";
-  startPen();
+  beginStroke(pos(e));
 });
-cv.addEventListener("pointermove", function(e){
+window.addEventListener("pointermove", function(e){
+  lastPos = pos(e);
   if (dragLight){
     var q1 = pos(e);
     S.light.x = Math.max(-0.4, Math.min(1.4, q1.x/AB.w));
@@ -766,6 +776,33 @@ function release(){
 }
 cv.addEventListener("pointerup", release);
 cv.addEventListener("pointercancel", release);
+window.addEventListener("pointerup", function(){ if (drawing && !spaceDrawing) release(); });
+
+/* ---- disegno con la barra spaziatrice ----
+   Tieni premuta la barra col cursore sulla tavola e il tratto segue il puntatore
+   senza bisogno di tenere premuto il tasto del mouse. */
+function isTyping(){
+  var a = document.activeElement;
+  return !!a && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(a.tagName);
+}
+window.addEventListener("keydown", function(e){
+  if (e.code !== "Space" && e.key !== " ") return;
+  if (spaceDrawing){ e.preventDefault(); return; }      /* niente scroll mentre disegni */
+  if (e.repeat || drawing || dragLight) return;
+  if (isTyping() || !overCanvas || !lastPos) return;
+  e.preventDefault();
+  spaceDrawing = true;
+  beginStroke(lastPos);
+});
+window.addEventListener("keyup", function(e){
+  if ((e.code !== "Space" && e.key !== " ") || !spaceDrawing) return;
+  e.preventDefault();
+  spaceDrawing = false;
+  release();
+});
+window.addEventListener("blur", function(){
+  if (spaceDrawing){ spaceDrawing = false; release(); }
+});
 
 /* ============ export ============ */
 function svgString(){
@@ -785,7 +822,17 @@ function svgString(){
 function jsonString(){
   var a = [];
   emit(function(o){ a.push([+o.x.toFixed(1), +o.y.toFixed(1), +o.r.toFixed(1), o.hex]); });
-  return JSON.stringify(a);
+  var shells = 1;
+  for (var i=0;i<built.length;i++){
+    if (built[i].circles.length){ shells = built[i].circles[0].sh.length; break; }
+  }
+  return JSON.stringify({
+    format: "nastro/1",
+    w: AB.w, h: AB.h,
+    shells: shells,
+    bg: S.transp ? null : S.bg,
+    circles: a
+  });
 }
 var dl = null;
 window.claude && window.claude.use && window.claude.use("downloads").then(function(d){ dl = d; });
